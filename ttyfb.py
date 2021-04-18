@@ -34,7 +34,7 @@ __all__ = (
     'resize', 'clear', 'fill',
     'getpixel', 'putpixel',
     'render', 'to_stdout', 'to_file',
-    'line', 'circle',
+    'line', 'circle', 'rectangle',
     'Vertex', 'triangle',
     'text_big', 'text_small',
     'view_image',
@@ -153,6 +153,11 @@ def line(a, b, rgb_a, rgb_b=None):
     dx = x1 - x0
     dy = y1 - y0
     if abs(dx) > abs(dy):
+        if dx < 0:
+            x0, x1 = x1, x0
+            y0, y1 = y1, y0
+            dx *= -1
+            dy *= -1
         for x in range(abs(int(dx+1))):
             alpha = x / abs(dx)
             if dx < 0:
@@ -160,6 +165,11 @@ def line(a, b, rgb_a, rgb_b=None):
             y = int(x*dy/dx)
             putpixel((x0+x, y0+y), lerp_rgb(rgb_a, rgb_b, alpha))
     else:
+        if dy < 0:
+            x0, x1 = x1, x0
+            y0, y1 = y1, y0
+            dx *= -1
+            dy *= -1
         for y in range(abs(int(dy+1))):
             alpha = y / abs(dy or 1)
             if dy < 0:
@@ -336,7 +346,10 @@ def dark_rectangle(x, y, w, h, darken=0.5):
             putpixel((xx, yy), c)
 
 
-
+def rectangle(x, y, w, h, color):
+    for yy in range(y, y+h):
+        for xx in range(x, x+w):
+            putpixel((xx, yy), color)
 
 
 def yields_frames(func):
