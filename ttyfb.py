@@ -1,4 +1,4 @@
-import sys, math, time, zlib, colorsys, random, os
+import sys, math, time, zlib, colorsys, random, os, contextlib
 
 #
 # ttyfb 0.1 PREVIEW for Python
@@ -38,6 +38,7 @@ __all__ = (
     'Vertex', 'triangle',
     'text_big', 'text_small',
     'view_image',
+    'no_cursor',
 )
 
 fontdat = bytearray(zlib.decompress(b'x\x9c=R\xc1\x8a\x13A\x10-6d\xe8C\xbbY5\x87\x16\x9a'
@@ -319,16 +320,32 @@ def render(out):
     sys.stdout.flush()
 
 
-def text_big(text, pos, rgb, scale=(1, 1)):
+def text_big(text, pos, rgb, scale=(1, 1), rotate=0):
     ww, hh, pixels = pixelfont(text)
 
-    for y in range(hh):
-        scry = pos[1] + y * scale[1]
-        for x in range(ww):
-            if pixels[y*ww+x]:
-                scrx = pos[0] + x * scale[0]
-                putpixel((scrx, scry*2), rgb)
-                putpixel((scrx, scry*2+1), rgb)
+    cx = pos[0] + ww * scale[0] / 2
+    cy = pos[1] + hh * scale[1] / 2
+    sr = math.sin(rotate)
+    cr = math.cos(rotate)
+
+    for y in range(int(hh*scale[1])):
+        scry = pos[1] + y
+        for x in range(int(ww*scale[0])):
+            if pixels[int(y/scale[1])*ww+int(x/scale[0])]:
+                scrx = pos[0] + x
+
+                if rotate:
+                    lx = scrx - cx
+                    ly = scry - cy
+
+                    lx, ly = lx * cr - ly * sr, lx * sr + ly * cr
+
+                    lx += cx
+                    ly += cy
+
+                    putpixel((lx, ly), rgb)
+                else:
+                    putpixel((scrx, scry), rgb)
 
 
 def text_small(text, pos):
@@ -411,11 +428,11 @@ def years_coroutine():
             for line_frame in range(frames_per_line + (frames_afterglow if year_lines == (len(year_text)) else 0)):
                 frames_this_page = (year_lines * frames_per_line + line_frame)
                 page_intro_ratio = frames_this_page / frames_per_line / 3 if year_lines <= 3 else 1
-                yoff = min(0, -10*(1-easing_bounce(page_intro_ratio)))
+                yoff = min(0, -20*(1-easing_bounce(page_intro_ratio)))
                 yoff = int(yoff)
 
-                text_big(title, (1, yoff + 1), (0, 0, 0))
-                text_big(title, (2, yoff + 1), (255, 255, 255))
+                text_big(title, (1, yoff + 1), (0, 0, 0), (1, 2))
+                text_big(title, (2, yoff + 1), (255, 255, 255), (1, 2))
 
                 dark_rectangle(1, 20, max(len(line) for line in year_text)+4, 2*len(year_text)+2, 0.3)
 
@@ -947,8 +964,8 @@ def cube():
 def come_from_center_coroutine(lines):
     sc = (60, 60, 60)
 
-    sh = h/2
-    th = 8
+    sh = h
+    th = 8*2
     for j in range(80):
         ts = min(1, j/10)
         ts = ts
@@ -963,8 +980,8 @@ def come_from_center_coroutine(lines):
 
             x = (w-tw*ts)/2-1
 
-            text_big(line, (x+1-2*(idx%2), y), sc, (ts, ts))
-            text_big(line, (x, y), (255, 255, 255), (ts, ts))
+            text_big(line, (x+1-2*(idx%2), y), sc, (ts, ts*2))
+            text_big(line, (x, y), (255, 255, 255), (ts, ts*2))
 
         yield
 
@@ -980,6 +997,15 @@ def fade_to_black_coroutine(frames):
         yield
 
 
+@contextlib.contextmanager
+def no_cursor():
+    try:
+        to_stdout('\033[2J', '\033[?25l')
+        yield
+    finally:
+        to_stdout('\033[2J\033[H\033[0m', '\033[?25h')
+
+
 def run_demo(out):
     background_shader = cube
 
@@ -993,8 +1019,7 @@ def run_demo(out):
 
     overlay = overlays.pop(0)
 
-    out('\033[2J', '\033[?25l')
-    try:
+    with no_cursor():
         j = 0
         while True:
             started_time = time.time()
@@ -1014,8 +1039,6 @@ def run_demo(out):
 
             j += 1
             time.sleep(max(0, 0.04-(time.time() - started_time)))
-    finally:
-        out('\033[2J\033[H\033[0m', '\033[?25h')
 
 
 if __name__ == '__main__':
