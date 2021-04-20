@@ -1,4 +1,4 @@
-import sys, math, time, zlib, colorsys, random, os, contextlib
+import sys, math, time, zlib, colorsys, random, os, contextlib, array
 
 #
 # ttyfb 0.1 PREVIEW for Python
@@ -68,23 +68,66 @@ b'\xf1\xdb\x96I\x14\xa6\xb6Z\xe5\x7f\xdb\x0c\xd0\xc5'))
 w, h = os.get_terminal_size()
 h *= 2
 
+# Based on: https://jonasjacek.github.io/colors/
+RGB16 = (
+    (0, 0, 0),
+    (128, 0, 0),
+    (0, 128, 0),
+    (128, 128, 0),
+    (0, 0, 128),
+    (128, 0, 128),
+    (0, 128, 128),
+    (192, 192, 192),
+    (128, 128, 128),
+    (255, 0, 0),
+    (0, 255, 0),
+    (255, 255, 0),
+    (0, 0, 255),
+    (255, 0, 255),
+    (0, 255, 255),
+    (255, 255, 255),
+)
+
 class Demo:
-    clear = bytearray([16]*(w*h))
-    buffer = bytearray(clear)
+    clear = array.array('I', ([16]*(w*h)))
+    buffer = array.array('I', clear)
     textbuffer = [' ']*(w*h)
 
     hires = True
     antialias = False
     motionblur = False
-    dithering = False
+
+    MODE_TRUECOLOR = 0
+    MODE_256_DITHER = 1
+    MODE_256_FLAT = 2
+    MODE_16_DITHER = 3
+    MODE_16_FLAT = 4
+
+    MODES = (
+        MODE_TRUECOLOR,
+        MODE_256_DITHER,
+        MODE_256_FLAT,
+        MODE_16_DITHER,
+        MODE_16_FLAT,
+    )
+
+    MODE_NAMES = {
+        MODE_TRUECOLOR: 'truecolor',
+        MODE_256_DITHER: '256-dither',
+        MODE_256_FLAT: '256-flat',
+        MODE_16_DITHER: '16-dither',
+        MODE_16_FLAT: '16-flat',
+    }
+
+    mode = MODE_TRUECOLOR
 
 
 def resize(nw, nh):
     global w, h
     w = nw
     h = nh
-    Demo.clear = bytearray([16]*(w*h))
-    Demo.buffer = bytearray(Demo.clear)
+    Demo.clear = array.array('I', ([16]*(w*h)))
+    Demo.buffer = array.array('I', Demo.clear)
     Demo.textbuffer = [' ']*(w*h)
 
 
@@ -94,7 +137,7 @@ def clear():
 
 def fill(rgb):
     v = make_555(rgb)
-    Demo.buffer[:] = (v for _ in Demo.clear)
+    Demo.buffer[:] = array.array('I', [v]*len(Demo.clear))
 
 def pixelfont(text):
     height = 8
@@ -109,8 +152,51 @@ def pixelfont(text):
     return width, height, pixels
 
 def make_555(rgb):
+    r, g, b = rgb
+    r = int(max(0, min(255, r)))
+    g = int(max(0, min(255, g)))
+    b = int(max(0, min(255, b)))
+    return (r << 16 | g << 8 | b)
+
+
+def make_256(rgb):
+    r, g, b = rgb
+    r = int(max(0, min(255, r)))
+    g = int(max(0, min(255, g)))
+    b = int(max(0, min(255, b)))
+    if abs(r-g) < 5 and abs(r-b) < 5:
+        return int(232 + (255 - 232) * max(0, min(1, r / 255)))
     r, g, b = (int(max(0, min(5, v / 255 * 5))) for v in rgb)
     return (16 + 36 * r + 6 * g + b)
+
+
+def parse_256(value):
+    if value < 16:
+        return RGB16[value]
+    elif value < 232:
+        value -= 16
+        b = value % 6
+        value /= 6
+        g = value % 6
+        value /= 6
+        r = value
+        return (r*255/5, g*255/5, b*255/5)
+    else:
+        value -= 232
+        value = value * 255 / (255 - 232)
+        return (value, value, value)
+
+
+def rgb_diff(a, b):
+    return sum(abs(c-d) for c, d in zip(a, b))
+
+def lighter(value):
+    return tuple(min(255, int(v*1.2)) for v in value)
+
+
+lut_256_to_16 = [next(idx for idx, value in sorted(enumerate(RGB16), key=lambda iv: rgb_diff(iv[1], lighter(parse_256(i)))))
+                 for i in range(256)]
+
 
 def putpixel_555(pos, value):
     x, y = pos
@@ -120,34 +206,38 @@ def putpixel_555(pos, value):
 
 
 # https://en.wikipedia.org/wiki/Ordered_dithering
-dither_4x4 = [[v/16*48 for v in row] for row in
+dither_4x4 = [[(v/16-0.5) * 64 for v in row] for row in
        [(0, 8, 2, 10),
         (12, 4, 14, 6),
         (3, 11, 1, 9),
         (15, 7, 13, 5)]]
 
-def dither(v, pos):
+dither_4x4_broad = [[(v/16-0.5) * 128 for v in row] for row in
+       [(0, 8, 2, 10),
+        (12, 4, 14, 6),
+        (3, 11, 1, 9),
+        (15, 7, 13, 5)]]
+
+def dither256(v, pos):
+    if v in (0, 255):
+        return v
+
     x, y = pos
     return v + dither_4x4[int(y)%4][int(x)%4]
 
+def dither16(v, pos):
+    if v in (0, 255):
+        return v
+
+    x, y = pos
+    return v + dither_4x4_broad[int(y)%4][int(x)%4]
+
 def putpixel(pos, rgb):
-    if Demo.dithering:
-        r, g, b = (int(max(0, min(5, (dither(v, pos) / 255 * 5)))) for v in rgb)
-        color = (16 + 36 * r + 6 * g + b)
-    else:
-        color = make_555(rgb)
-    putpixel_555(pos, color)
+    putpixel_555(pos, make_555(rgb))
 
 
 def parse_555(value):
-    assert value >= 16
-    value -= 16
-    b = value % 6
-    value /= 6
-    g = value % 6
-    value /= 6
-    r = value
-    return (r*255/5, g*255/5, b*255/5)
+    return (value >> 16 & 0xff, value >> 8 & 0xff, value & 0xff)
 
 def darker(c):
     return make_555((int(x*0.8) for x in parse_555(c)))
@@ -283,6 +373,36 @@ def to_stdout(*args):
         sys.stdout.write(arg)
 
 
+def colorfmt(bg, value, x, y):
+    if Demo.mode == Demo.MODE_TRUECOLOR:
+        return f'{3+bg}8;2;{value>>16&0xff};{value>>8&0xff};{value&0xff}'
+    elif Demo.mode == Demo.MODE_256_DITHER:
+        rgb = parse_555(value)
+        rgb = tuple(dither256(v, (x, y)) for v in rgb)
+        value = make_256(rgb)
+        return f'{3+bg}8;5;{value}'
+    elif Demo.mode == Demo.MODE_256_FLAT:
+        value = make_256(parse_555(value))
+        return f'{3+bg}8;5;{value}'
+    elif Demo.mode == Demo.MODE_16_DITHER:
+        rgb = parse_555(value)
+        rgb = tuple(dither16(v, (x, y)) for v in rgb)
+        closest = lut_256_to_16[make_256(rgb)]
+        if closest > 7:
+            return f'{9+bg}{closest-8}'
+        else:
+            return f'{3+bg}{closest}'
+    elif Demo.mode == Demo.MODE_16_FLAT:
+        rgb = parse_555(value)
+        closest = lut_256_to_16[make_256(rgb)]
+        if closest > 7:
+            return f'{9+bg}{closest-8}'
+        else:
+            return f'{3+bg}{closest}'
+    else:
+        raise ValueError(Demo.mode)
+
+
 def render(out):
     out('\033[H\033[0m')
 
@@ -308,6 +428,14 @@ def render(out):
                 upper_color = lower_color = make_555(color)
             else:
                 upper_color = lower_color = Demo.buffer[(y*2)*w+x]
+
+            if upper_color != lower_color:
+                upper_color = colorfmt(1, upper_color, x, y*2)
+                lower_color = colorfmt(0, lower_color, x, y*2+1)
+            else:
+                upper_color = colorfmt(1, upper_color, x, y*2)
+                lower_color = colorfmt(0, lower_color, x, y*2)
+
             ch = Demo.textbuffer[y*w+x]
             if Demo.hires and ch != ' ':
                 # Fix for text_small in hires mode
@@ -318,20 +446,20 @@ def render(out):
                     out(f'\033[38;5;15m')
             if upper_color == lower_color == 0:
                 if current_back_color != 0:
-                    out('\033[48;5;0m')
+                    out(f'\033[{upper_color}m')
                     current_back_color = 0
                 out(ch)
             elif upper_color == lower_color:
                 if current_back_color != upper_color:
-                    out(f'\033[48;5;{upper_color}m')
+                    out(f'\033[{upper_color}m')
                     current_back_color = upper_color
                 out(ch)
             else:
                 if current_back_color != upper_color:
-                    out(f'\033[48;5;{upper_color}m')
+                    out(f'\033[{upper_color}m')
                     current_back_color = upper_color
                 if current_fore_color != lower_color:
-                    out(f'\033[38;5;{lower_color}m')
+                    out(f'\033[{lower_color}m')
                     current_fore_color = lower_color
                 out('▄')
         if y < h-1:
@@ -1027,7 +1155,7 @@ def no_cursor():
 
 
 def run_demo(out):
-    Demo.dithering = True
+    Demo.mode = Demo.MODE_256_DITHER
 
     background_shader = cube
 

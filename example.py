@@ -18,23 +18,18 @@ text_small('ttyfb 0.1 PREVIEW', (5, 12))
 
 render(to_stdout)
 
-with open('example-out.txt', 'w') as fp:
-    render(to_file(fp))
+#with open('example-out.txt', 'w') as fp:
+#    render(to_file(fp))
 
 input()
 
-Demo.dithering = False
-clear()
-view_image('lena.png')
-render(to_stdout)
-input()
+for mode in Demo.MODES:
+    Demo.mode = mode
+    clear()
+    text_small(f'Mode: {Demo.MODE_NAMES[mode]}', (0, 0))
+    view_image('lena.png')
+    render(to_stdout)
+    input()
 
-Demo.dithering = True
-clear()
-view_image('lena.png')
-render(to_stdout)
-input()
-
-with open('lena.txt', 'w') as fp:
-    render(to_file(fp))
-
+#with open('lena.txt', 'w') as fp:
+#    render(to_file(fp))

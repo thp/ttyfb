@@ -1,21 +1,16 @@
 from ttyfb import *
 from ttyfb import Demo
 
-def render_example(dithering):
-    Demo.dithering = dithering
+for dstcolor in ((0, 0, 255), (255, 255, 255)):
+    for mode in Demo.MODES:
+        Demo.mode = mode
 
-    for y in range(h):
-        ya = (y+1) / h
-        for x in range(w):
-            putpixel((x, y), lerp_rgb((0, 0, 0), (0, 0, 255), ya))
+        clear()
+        for y in range(h):
+            ya = (y+1) / h
+            for x in range(w):
+                putpixel((x, y), lerp_rgb((0, 0, 0), dstcolor, ya))
 
-    text_big('Dithering' if dithering else 'Palette', (0, 3), (255, 255, 255))
-
-    render(to_stdout)
-
-render_example(False)
-input()
-
-render_example(True)
-input()
-
+        text_small(f'Mode: {Demo.MODE_NAMES[mode]} color: {dstcolor}', (0, 0))
+        render(to_stdout)
+        input()
