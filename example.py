@@ -1,5 +1,7 @@
 from ttyfb import *
 
+from ttyfb import Demo
+
 fill((64, 64, 64))
 
 line((0, 0), (w, h), (255, 0, 0), (0, 255, 0))
@@ -21,12 +23,18 @@ with open('example-out.txt', 'w') as fp:
 
 input()
 
+Demo.dithering = False
 clear()
 view_image('lena.png')
 render(to_stdout)
+input()
+
+Demo.dithering = True
+clear()
+view_image('lena.png')
+render(to_stdout)
+input()
 
 with open('lena.txt', 'w') as fp:
     render(to_file(fp))
-
-input()
 

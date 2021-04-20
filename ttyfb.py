@@ -39,6 +39,7 @@ __all__ = (
     'text_big', 'text_small',
     'view_image',
     'no_cursor',
+    'lerp', 'lerp_rgb',
 )
 
 fontdat = bytearray(zlib.decompress(b'x\x9c=R\xc1\x8a\x13A\x10-6d\xe8C\xbbY5\x87\x16\x9a'
@@ -75,6 +76,7 @@ class Demo:
     hires = True
     antialias = False
     motionblur = False
+    dithering = False
 
 
 def resize(nw, nh):
@@ -116,8 +118,26 @@ def putpixel_555(pos, value):
         return
     Demo.buffer[int(y)*w+int(x)] = value
 
+
+# https://en.wikipedia.org/wiki/Ordered_dithering
+dither_4x4 = [[v/16*48 for v in row] for row in
+       [(0, 8, 2, 10),
+        (12, 4, 14, 6),
+        (3, 11, 1, 9),
+        (15, 7, 13, 5)]]
+
+def dither(v, pos):
+    x, y = pos
+    return v + dither_4x4[int(y)%4][int(x)%4]
+
 def putpixel(pos, rgb):
-    putpixel_555(pos, make_555(rgb))
+    if Demo.dithering:
+        r, g, b = (int(max(0, min(5, (dither(v, pos) / 255 * 5)))) for v in rgb)
+        color = (16 + 36 * r + 6 * g + b)
+    else:
+        color = make_555(rgb)
+    putpixel_555(pos, color)
+
 
 def parse_555(value):
     assert value >= 16
@@ -1007,6 +1027,8 @@ def no_cursor():
 
 
 def run_demo(out):
+    Demo.dithering = True
+
     background_shader = cube
 
     overlays = [
