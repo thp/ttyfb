@@ -1084,7 +1084,7 @@ def cube():
         fx = w*factor
         fy = h*factor
 
-        p = Matrix4x4.perspective(90, 16/10, 0.01, 100)
+        p = Matrix4x4.perspective(116/180*math.pi, 16/10, 0.01, 100)
         m = Matrix4x4.rotation(j*4*delayed, axis.x, axis.y, axis.z)
         t = Matrix4x4.translation(0, 0, -50)
         rotated = [p.map_vec3(t.map_vec3(m.map_vec3(v))) for v in front]
