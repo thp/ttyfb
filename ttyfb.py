@@ -759,7 +759,10 @@ def circles_demo():
 def view_image(filename):
     from PIL import Image
 
-    im = Image.open(filename)
+    if isinstance(filename, Image.Image):
+        im = filename
+    else:
+        im = Image.open(filename)
 
     ww, hh = im.size
 
